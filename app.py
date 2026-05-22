@@ -513,17 +513,30 @@ st.markdown(
 )
 
 # Header con logos
-col_logo, col_title, col_uvg = st.columns([1.4, 3.2, 0.8])
+col_logo, col_title, col_uvg = st.columns([1.2, 3.6, 0.9])
+
 with col_logo:
+    st.markdown("<div style='height:55px;'></div>", unsafe_allow_html=True)
     if os.path.exists(LOGO_AVE):
-        st.image(LOGO_AVE, use_container_width=True)
+        st.image(LOGO_AVE, width=190)
+
 with col_title:
-    st.markdown(f"<div class='ave-title'>{APP_TITLE}</div>", unsafe_allow_html=True)
-    st.markdown(f"<div class='ave-credit'>{CREDITS}</div>", unsafe_allow_html=True)
-    st.markdown(f"<div class='ave-subcredit'>{SUBCREDITS}</div>", unsafe_allow_html=True)
+    st.markdown(
+        f"""
+        <div style='text-align:center; padding-top:10px;'>
+            <div class='ave-title'>{APP_TITLE}</div>
+            <div class='ave-credit'>{CREDITS}</div>
+            <div class='ave-subcredit'>{SUBCREDITS}</div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
 with col_uvg:
+    st.markdown("<div style='height:55px;'></div>", unsafe_allow_html=True)
     if os.path.exists(LOGO_UVG):
-        st.image(LOGO_UVG, use_container_width=True)
+        st.image(LOGO_UVG, width=105)
+
 
 st.markdown("---")
 
