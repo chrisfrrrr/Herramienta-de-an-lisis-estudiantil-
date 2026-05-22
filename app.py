@@ -329,6 +329,147 @@ def registros_a_dataframe(registros: List[Registro], semana: int) -> pd.DataFram
         })
     return pd.DataFrame(rows)
 
+
+# =========================================================
+# BASE LIMPIA PARA POWER BI
+# =========================================================
+def preparar_base_powerbi(
+    df: pd.DataFrame,
+    semana: int,
+    fecha_actual: datetime,
+    archivo_origen: str = "",
+    archivos_procesados: int = 1,
+) -> pd.DataFrame:
+    """
+    Genera una base plana y estable para Power BI.
+    Mantiene nombres de columnas consistentes para que el dashboard pueda actualizarse
+    sin rehacer visuales, medidas ni filtros.
+    """
+    df_powerbi = df.copy()
+
+    if "Archivo origen" not in df_powerbi.columns:
+        df_powerbi.insert(0, "Archivo origen", archivo_origen)
+
+    # Columnas de control del análisis
+    df_powerbi["Fecha de análisis"] = fecha_actual.strftime("%Y-%m-%d %H:%M")
+    df_powerbi["Año análisis"] = fecha_actual.year
+    df_powerbi["Mes análisis"] = fecha_actual.month
+    df_powerbi["Día análisis"] = fecha_actual.day
+    df_powerbi["Semana análisis"] = int(semana)
+    df_powerbi["PDF procesados"] = int(archivos_procesados)
+
+    # Campos numéricos limpios para Power BI
+    columnas_numericas = [
+        "Actividad total (min)",
+        "Actividad total (horas)",
+        "Horas desde última",
+        "Días desde última",
+        "Avance actividad (%)",
+        "Semana análisis",
+        "Horas esperadas",
+        "Cumplimiento semanal (%)",
+        "PDF procesados",
+    ]
+
+    for col in columnas_numericas:
+        if col in df_powerbi.columns:
+            df_powerbi[col] = pd.to_numeric(df_powerbi[col], errors="coerce").fillna(0)
+
+    # Formato estable de fecha/hora para Power BI
+    if "Fecha última actividad" in df_powerbi.columns:
+        fechas = pd.to_datetime(df_powerbi["Fecha última actividad"], errors="coerce")
+        df_powerbi["Fecha última actividad"] = fechas.dt.strftime("%Y-%m-%d %H:%M").fillna("")
+
+    # Dimensiones auxiliares para segmentadores, colores y ordenamientos
+    df_powerbi["Tiene actividad registrada"] = df_powerbi["Fecha última actividad"].apply(
+        lambda x: "Sí" if str(x).strip() else "No"
+    )
+
+    df_powerbi["Tiene alerta crítica"] = df_powerbi["Alerta 72h"].apply(
+        lambda x: "Sí" if x in ["Sí", "Sin actividad registrada"] else "No"
+    )
+
+    df_powerbi["Nivel avance"] = df_powerbi["Avance actividad (%)"].apply(
+        lambda x: f"{int(x)}%" if pd.notna(x) else "0%"
+    )
+
+    df_powerbi["Orden riesgo"] = df_powerbi["Riesgo abandono"].map({
+        "Bajo": 1,
+        "Medio": 2,
+        "Alto": 3,
+    }).fillna(0).astype(int)
+
+    df_powerbi["Orden cumplimiento"] = df_powerbi["Estado cumplimiento"].map({
+        "Cumple": 1,
+        "No cumple": 2,
+    }).fillna(0).astype(int)
+
+    columnas_powerbi = [
+        "Archivo origen",
+        "ID Usuario",
+        "Nombre",
+        "Login",
+        "SIS",
+        "Sección",
+        "Rol",
+        "Última actividad",
+        "Fecha última actividad",
+        "Actividad total",
+        "Actividad total (min)",
+        "Actividad total (horas)",
+        "Horas desde última",
+        "Días desde última",
+        "Riesgo abandono",
+        "Orden riesgo",
+        "Alerta 72h",
+        "Tiene alerta crítica",
+        "Avance actividad (%)",
+        "Nivel avance",
+        "Semana análisis",
+        "Horas esperadas",
+        "Cumplimiento semanal (%)",
+        "Estado cumplimiento",
+        "Orden cumplimiento",
+        "Tiene actividad registrada",
+        "Observación",
+        "Fecha de análisis",
+        "Año análisis",
+        "Mes análisis",
+        "Día análisis",
+        "PDF procesados",
+    ]
+
+    for col in columnas_powerbi:
+        if col not in df_powerbi.columns:
+            df_powerbi[col] = ""
+
+    return df_powerbi[columnas_powerbi]
+
+
+def exportar_base_powerbi_csv_bytes(
+    df: pd.DataFrame,
+    semana: int,
+    fecha_actual: datetime,
+    archivo_origen: str = "",
+    archivos_procesados: int = 1,
+) -> BytesIO:
+    """
+    Exporta la base limpia en CSV UTF-8 con BOM para que Power BI reconozca bien tildes y eñes.
+    El archivo recomendado para Power BI debe llamarse: base_powerbi_ave.csv
+    """
+    df_powerbi = preparar_base_powerbi(
+        df=df,
+        semana=semana,
+        fecha_actual=fecha_actual,
+        archivo_origen=archivo_origen,
+        archivos_procesados=archivos_procesados,
+    )
+
+    bio = BytesIO()
+    bio.write(df_powerbi.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig"))
+    bio.seek(0)
+    return bio
+
 # =========================================================
 # EXCEL
 # =========================================================
