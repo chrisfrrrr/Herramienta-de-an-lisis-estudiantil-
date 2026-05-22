@@ -329,144 +329,6 @@ def registros_a_dataframe(registros: List[Registro], semana: int) -> pd.DataFram
         })
     return pd.DataFrame(rows)
 
-
-# =========================================================
-# BASE LIMPIA PARA POWER BI
-# =========================================================
-def preparar_base_powerbi(
-    df: pd.DataFrame,
-    semana: int,
-    fecha_actual: datetime,
-    archivo_origen: str = "",
-    archivos_procesados: int = 1,
-) -> pd.DataFrame:
-    """
-    Genera una base plana y estable para Power BI.
-    Mantiene nombres de columnas consistentes para que el dashboard pueda actualizarse
-    sin rehacer visuales, medidas ni filtros.
-    """
-    df_powerbi = df.copy()
-
-    if "Archivo origen" not in df_powerbi.columns:
-        df_powerbi.insert(0, "Archivo origen", archivo_origen)
-
-    # Columnas de control del análisis
-    df_powerbi["Fecha de análisis"] = fecha_actual.strftime("%Y-%m-%d %H:%M")
-    df_powerbi["Año análisis"] = fecha_actual.year
-    df_powerbi["Mes análisis"] = fecha_actual.month
-    df_powerbi["Día análisis"] = fecha_actual.day
-    df_powerbi["Semana análisis"] = int(semana)
-    df_powerbi["PDF procesados"] = int(archivos_procesados)
-
-    # Campos numéricos limpios para Power BI
-    columnas_numericas = [
-        "Actividad total (min)",
-        "Actividad total (horas)",
-        "Horas desde última",
-        "Días desde última",
-        "Avance actividad (%)",
-        "Semana análisis",
-        "Horas esperadas",
-        "Cumplimiento semanal (%)",
-        "PDF procesados",
-    ]
-
-    for col in columnas_numericas:
-        if col in df_powerbi.columns:
-            df_powerbi[col] = pd.to_numeric(df_powerbi[col], errors="coerce").fillna(0)
-
-    # Formato estable de fecha/hora para Power BI
-    if "Fecha última actividad" in df_powerbi.columns:
-        fechas = pd.to_datetime(df_powerbi["Fecha última actividad"], errors="coerce")
-        df_powerbi["Fecha última actividad"] = fechas.dt.strftime("%Y-%m-%d %H:%M").fillna("")
-
-    # Dimensiones auxiliares para segmentadores, colores y ordenamientos
-    df_powerbi["Tiene actividad registrada"] = df_powerbi["Fecha última actividad"].apply(
-        lambda x: "Sí" if str(x).strip() else "No"
-    )
-    df_powerbi["Tiene alerta crítica"] = df_powerbi["Alerta 72h"].apply(
-        lambda x: "Sí" if x in ["Sí", "Sin actividad registrada"] else "No"
-    )
-    df_powerbi["Nivel avance"] = df_powerbi["Avance actividad (%)"].apply(
-        lambda x: f"{int(x)}%" if pd.notna(x) else "0%"
-    )
-    df_powerbi["Orden riesgo"] = df_powerbi["Riesgo abandono"].map({
-        "Bajo": 1,
-        "Medio": 2,
-        "Alto": 3,
-    }).fillna(0).astype(int)
-    df_powerbi["Orden cumplimiento"] = df_powerbi["Estado cumplimiento"].map({
-        "Cumple": 1,
-        "No cumple": 2,
-    }).fillna(0).astype(int)
-
-    # Columnas esperadas por el dashboard de Power BI
-    columnas_powerbi = [
-        "Archivo origen",
-        "ID Usuario",
-        "Nombre",
-        "Login",
-        "SIS",
-        "Sección",
-        "Rol",
-        "Última actividad",
-        "Fecha última actividad",
-        "Actividad total",
-        "Actividad total (min)",
-        "Actividad total (horas)",
-        "Horas desde última",
-        "Días desde última",
-        "Riesgo abandono",
-        "Orden riesgo",
-        "Alerta 72h",
-        "Tiene alerta crítica",
-        "Avance actividad (%)",
-        "Nivel avance",
-        "Semana análisis",
-        "Horas esperadas",
-        "Cumplimiento semanal (%)",
-        "Estado cumplimiento",
-        "Orden cumplimiento",
-        "Tiene actividad registrada",
-        "Observación",
-        "Fecha de análisis",
-        "Año análisis",
-        "Mes análisis",
-        "Día análisis",
-        "PDF procesados",
-    ]
-
-    for col in columnas_powerbi:
-        if col not in df_powerbi.columns:
-            df_powerbi[col] = ""
-
-    return df_powerbi[columnas_powerbi]
-
-
-def exportar_base_powerbi_csv_bytes(
-    df: pd.DataFrame,
-    semana: int,
-    fecha_actual: datetime,
-    archivo_origen: str = "",
-    archivos_procesados: int = 1,
-) -> BytesIO:
-    """
-    Exporta la base limpia en CSV UTF-8 con BOM para que Power BI reconozca bien tildes y eñes.
-    El archivo recomendado para Power BI debe llamarse: base_powerbi_ave.csv
-    """
-    df_powerbi = preparar_base_powerbi(
-        df=df,
-        semana=semana,
-        fecha_actual=fecha_actual,
-        archivo_origen=archivo_origen,
-        archivos_procesados=archivos_procesados,
-    )
-    bio = BytesIO()
-    bio.write(df_powerbi.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig"))
-    bio.seek(0)
-    return bio
-
-
 # =========================================================
 # EXCEL
 # =========================================================
@@ -486,6 +348,86 @@ def pintar_celda_por_riesgo(cell, valor):
         cell.fill = PatternFill("solid", fgColor="FFC7CE")
 
 
+def ancho_columna_por_header(header: str) -> int:
+    anchos = {
+        "Archivo origen": 34,
+        "ID Usuario": 12,
+        "Nombre": 34,
+        "Login": 26,
+        "SIS": 12,
+        "Sección": 32,
+        "Rol": 12,
+        "Última actividad": 24,
+        "Fecha última actividad": 20,
+        "Actividad total": 16,
+        "Actividad total (min)": 18,
+        "Actividad total (horas)": 20,
+        "Horas desde última": 18,
+        "Días desde última": 16,
+        "Riesgo abandono": 16,
+        "Alerta 72h": 22,
+        "Avance actividad (%)": 18,
+        "Semana análisis": 16,
+        "Horas esperadas": 16,
+        "Cumplimiento semanal (%)": 22,
+        "Estado cumplimiento": 20,
+        "Observación": 45,
+    }
+    return anchos.get(header, 18)
+
+
+def aplicar_anchos(ws, headers):
+    for idx, header in enumerate(headers, start=1):
+        ws.column_dimensions[get_column_letter(idx)].width = ancho_columna_por_header(header)
+
+
+def agregar_hoja_dataframe(wb, sheet_name: str, df_sheet: pd.DataFrame, header_fill, header_font, thin):
+    ws = wb.create_sheet(sheet_name)
+    headers = list(df_sheet.columns)
+    ws.append(headers)
+    for row in df_sheet.itertuples(index=False):
+        ws.append(list(row))
+    aplicar_estilo_encabezado(ws, header_fill, header_font)
+    ws.freeze_panes = "A2"
+    ws.auto_filter.ref = ws.dimensions
+    aplicar_anchos(ws, headers)
+    idx_riesgo = headers.index("Riesgo abandono") + 1 if "Riesgo abandono" in headers else None
+    idx_alerta = headers.index("Alerta 72h") + 1 if "Alerta 72h" in headers else None
+    idx_cumple = headers.index("Estado cumplimiento") + 1 if "Estado cumplimiento" in headers else None
+    for row in ws.iter_rows(min_row=2, max_row=ws.max_row):
+        if idx_riesgo:
+            pintar_celda_por_riesgo(row[idx_riesgo - 1], row[idx_riesgo - 1].value)
+        if idx_alerta and row[idx_alerta - 1].value in {"Sí", "Sin actividad registrada"}:
+            row[idx_alerta - 1].fill = PatternFill("solid", fgColor="FFC7CE")
+        if idx_cumple and row[idx_cumple - 1].value == "No cumple":
+            row[idx_cumple - 1].fill = PatternFill("solid", fgColor="FFC7CE")
+        for c in row:
+            c.alignment = Alignment(vertical="top", wrap_text=True)
+            c.border = Border(bottom=thin)
+    return ws
+
+
+def generar_resumen_por_seccion(df: pd.DataFrame) -> pd.DataFrame:
+    if df.empty or "Sección" not in df.columns:
+        return pd.DataFrame()
+    resumen = df.groupby("Sección", dropna=False).agg(
+        Total_estudiantes=("Nombre", "count"),
+        Con_actividad=("Fecha última actividad", lambda x: (x != "").sum()),
+        Sin_actividad=("Fecha última actividad", lambda x: (x == "").sum()),
+        Riesgo_bajo=("Riesgo abandono", lambda x: (x == "Bajo").sum()),
+        Riesgo_medio=("Riesgo abandono", lambda x: (x == "Medio").sum()),
+        Riesgo_alto=("Riesgo abandono", lambda x: (x == "Alto").sum()),
+        Alertas_72h=("Alerta 72h", lambda x: x.isin(["Sí", "Sin actividad registrada"]).sum()),
+        Cumplen=("Estado cumplimiento", lambda x: (x == "Cumple").sum()),
+        No_cumplen=("Estado cumplimiento", lambda x: (x == "No cumple").sum()),
+        Promedio_horas=("Actividad total (horas)", "mean"),
+    ).reset_index()
+    resumen["Promedio_horas"] = resumen["Promedio_horas"].round(2)
+    resumen["% Riesgo alto"] = (resumen["Riesgo_alto"] / resumen["Total_estudiantes"] * 100).round(2)
+    resumen["% Cumplimiento"] = (resumen["Cumplen"] / resumen["Total_estudiantes"] * 100).round(2)
+    return resumen
+
+
 def exportar_excel_bytes(df: pd.DataFrame, semana: int, fecha_actual: datetime, pdf_nombre: str) -> BytesIO:
     wb = Workbook()
     ws = wb.active
@@ -493,52 +435,151 @@ def exportar_excel_bytes(df: pd.DataFrame, semana: int, fecha_actual: datetime, 
 
     headers = list(df.columns)
     ws.append(headers)
+
     for row in df.itertuples(index=False):
         ws.append(list(row))
 
     header_fill = PatternFill("solid", fgColor="1F4E78")
     header_font = Font(color="FFFFFF", bold=True)
     thin = Side(style="thin", color="D9E2F3")
+
     aplicar_estilo_encabezado(ws, header_fill, header_font)
     ws.freeze_panes = "A2"
     ws.auto_filter.ref = ws.dimensions
 
-    widths = [12, 34, 24, 12, 28, 12, 24, 20, 16, 18, 20, 18, 16, 16, 22, 18, 16, 16, 22, 20, 45]
-    for i, width in enumerate(widths, start=1):
-        ws.column_dimensions[get_column_letter(i)].width = width
+    anchos = {
+        "Archivo origen": 34,
+        "ID Usuario": 12,
+        "Nombre": 34,
+        "Login": 26,
+        "SIS": 12,
+        "Sección": 32,
+        "Rol": 12,
+        "Última actividad": 24,
+        "Fecha última actividad": 20,
+        "Actividad total": 16,
+        "Actividad total (min)": 18,
+        "Actividad total (horas)": 20,
+        "Horas desde última": 18,
+        "Días desde última": 16,
+        "Riesgo abandono": 16,
+        "Alerta 72h": 22,
+        "Avance actividad (%)": 18,
+        "Semana análisis": 16,
+        "Horas esperadas": 16,
+        "Cumplimiento semanal (%)": 22,
+        "Estado cumplimiento": 20,
+        "Observación": 45,
+    }
+
+    for i, header in enumerate(headers, start=1):
+        ws.column_dimensions[get_column_letter(i)].width = anchos.get(header, 18)
+
+    idx_riesgo = headers.index("Riesgo abandono") if "Riesgo abandono" in headers else None
+    idx_alerta = headers.index("Alerta 72h") if "Alerta 72h" in headers else None
+    idx_cumple = headers.index("Estado cumplimiento") if "Estado cumplimiento" in headers else None
 
     for row in ws.iter_rows(min_row=2, max_row=ws.max_row):
-        pintar_celda_por_riesgo(row[13], row[13].value)
-        if row[14].value in {"Sí", "Sin actividad registrada"}:
-            row[14].fill = PatternFill("solid", fgColor="FFC7CE")
-        if row[19].value == "No cumple":
-            row[19].fill = PatternFill("solid", fgColor="FFC7CE")
+        if idx_riesgo is not None:
+            pintar_celda_por_riesgo(row[idx_riesgo], row[idx_riesgo].value)
+
+        if idx_alerta is not None and row[idx_alerta].value in {"Sí", "Sin actividad registrada"}:
+            row[idx_alerta].fill = PatternFill("solid", fgColor="FFC7CE")
+
+        if idx_cumple is not None and row[idx_cumple].value == "No cumple":
+            row[idx_cumple].fill = PatternFill("solid", fgColor="FFC7CE")
+
         for c in row:
             c.alignment = Alignment(vertical="top", wrap_text=True)
             c.border = Border(bottom=thin)
 
-    if ws.max_row > 1:
-        tab = Table(displayName="TablaReporte", ref=f"A1:U{ws.max_row}")
-        tab.tableStyleInfo = TableStyleInfo(name="TableStyleMedium2", showFirstColumn=False, showLastColumn=False, showRowStripes=True, showColumnStripes=False)
+    if ws.max_row > 1 and ws.max_column > 1:
+        last_col = get_column_letter(ws.max_column)
+        tab = Table(displayName="TablaReporte", ref=f"A1:{last_col}{ws.max_row}")
+        tab.tableStyleInfo = TableStyleInfo(
+            name="TableStyleMedium2",
+            showFirstColumn=False,
+            showLastColumn=False,
+            showRowStripes=True,
+            showColumnStripes=False,
+        )
         ws.add_table(tab)
 
     # Hojas filtradas
-    for sheet_name, filtro in [
+    hojas_filtradas = [
         ("Alertas 72 horas", df["Alerta 72h"].isin(["Sí", "Sin actividad registrada"])),
         ("Riesgo alto", df["Riesgo abandono"].eq("Alto")),
-    ]:
+    ]
+
+    for sheet_name, filtro in hojas_filtradas:
         wsf = wb.create_sheet(sheet_name)
         wsf.append(headers)
+
         for row in df[filtro].itertuples(index=False):
             wsf.append(list(row))
+
         aplicar_estilo_encabezado(wsf, header_fill, header_font)
         wsf.freeze_panes = "A2"
         wsf.auto_filter.ref = wsf.dimensions
-        for col in range(1, len(headers) + 1):
-            wsf.column_dimensions[get_column_letter(col)].width = widths[col - 1]
+
+        for i, header in enumerate(headers, start=1):
+            wsf.column_dimensions[get_column_letter(i)].width = anchos.get(header, 18)
+
+        for row in wsf.iter_rows(min_row=2, max_row=wsf.max_row):
+            if idx_riesgo is not None:
+                pintar_celda_por_riesgo(row[idx_riesgo], row[idx_riesgo].value)
+
+            if idx_alerta is not None and row[idx_alerta].value in {"Sí", "Sin actividad registrada"}:
+                row[idx_alerta].fill = PatternFill("solid", fgColor="FFC7CE")
+
+            if idx_cumple is not None and row[idx_cumple].value == "No cumple":
+                row[idx_cumple].fill = PatternFill("solid", fgColor="FFC7CE")
+
+            for c in row:
+                c.alignment = Alignment(vertical="top", wrap_text=True)
+                c.border = Border(bottom=thin)
+
+    # Resumen por sección
+    if "Sección" in df.columns:
+        resumen_seccion = df.groupby("Sección", dropna=False).agg(
+            Total_estudiantes=("Nombre", "count"),
+            Con_actividad=("Fecha última actividad", lambda x: (x != "").sum()),
+            Sin_actividad=("Fecha última actividad", lambda x: (x == "").sum()),
+            Riesgo_bajo=("Riesgo abandono", lambda x: (x == "Bajo").sum()),
+            Riesgo_medio=("Riesgo abandono", lambda x: (x == "Medio").sum()),
+            Riesgo_alto=("Riesgo abandono", lambda x: (x == "Alto").sum()),
+            Alertas_72h=("Alerta 72h", lambda x: x.isin(["Sí", "Sin actividad registrada"]).sum()),
+            Cumplen=("Estado cumplimiento", lambda x: (x == "Cumple").sum()),
+            No_cumplen=("Estado cumplimiento", lambda x: (x == "No cumple").sum()),
+            Promedio_horas=("Actividad total (horas)", "mean"),
+        ).reset_index()
+
+        resumen_seccion["Promedio_horas"] = resumen_seccion["Promedio_horas"].round(2)
+        resumen_seccion["% Riesgo alto"] = (
+            resumen_seccion["Riesgo_alto"] / resumen_seccion["Total_estudiantes"] * 100
+        ).round(2)
+        resumen_seccion["% Cumplimiento"] = (
+            resumen_seccion["Cumplen"] / resumen_seccion["Total_estudiantes"] * 100
+        ).round(2)
+
+        wsr = wb.create_sheet("Resumen por sección")
+        wsr.append(list(resumen_seccion.columns))
+
+        for row in resumen_seccion.itertuples(index=False):
+            wsr.append(list(row))
+
+        aplicar_estilo_encabezado(wsr, header_fill, header_font)
+        wsr.freeze_panes = "A2"
+        wsr.auto_filter.ref = wsr.dimensions
+
+        for col in range(1, wsr.max_column + 1):
+            wsr.column_dimensions[get_column_letter(col)].width = 22
+
+        wsr.column_dimensions["A"].width = 38
 
     # Estadísticas
     wse = wb.create_sheet("Estadísticas")
+
     total = len(df)
     activos = int((df["Fecha última actividad"] != "").sum()) if total else 0
     sin_act = total - activos
@@ -549,14 +590,17 @@ def exportar_excel_bytes(df: pd.DataFrame, semana: int, fecha_actual: datetime, 
     cumplen = int((df["Estado cumplimiento"] == "Cumple").sum()) if total else 0
     no_cumplen = total - cumplen
     promedio_horas = round(float(df["Actividad total (horas)"].mean()), 2) if total else 0
+    total_secciones = int(df["Sección"].nunique()) if total and "Sección" in df.columns else 0
 
     wse["A1"] = "Resumen general del análisis"
     wse["A1"].font = Font(size=16, bold=True, color="1F4E78")
+
     resumen = [
-        ("Archivo PDF analizado", pdf_nombre),
+        ("Archivos PDF analizados", pdf_nombre),
         ("Fecha/hora de análisis", fecha_actual.strftime("%Y-%m-%d %H:%M")),
         ("Semana seleccionada", semana),
         ("Horas esperadas acumuladas", semana * 10),
+        ("Total de secciones detectadas", total_secciones),
         ("Total de estudiantes", total),
         ("Con última actividad registrada", activos),
         ("Sin actividad registrada", sin_act),
@@ -568,16 +612,21 @@ def exportar_excel_bytes(df: pd.DataFrame, semana: int, fecha_actual: datetime, 
         ("No cumplen horas esperadas", no_cumplen),
         ("Promedio actividad total (horas)", promedio_horas),
     ]
+
     for idx, (k, v) in enumerate(resumen, start=3):
         wse.cell(idx, 1).value = k
         wse.cell(idx, 2).value = v
         wse.cell(idx, 1).font = Font(bold=True)
-    wse.column_dimensions["A"].width = 36
-    wse.column_dimensions["B"].width = 30
 
+    wse.column_dimensions["A"].width = 38
+    wse.column_dimensions["B"].width = 50
+
+    # Gráfica riesgo
     wse["D2"] = "Distribución por riesgo"
     wse["D2"].font = Font(bold=True)
+
     riesgo_data = [("Bajo", bajo), ("Medio", medio), ("Alto", alto)]
+
     for i, (cat, val) in enumerate(riesgo_data, start=3):
         wse.cell(i, 4).value = cat
         wse.cell(i, 5).value = val
@@ -590,12 +639,16 @@ def exportar_excel_bytes(df: pd.DataFrame, semana: int, fecha_actual: datetime, 
     pie.title = "Riesgo de abandono"
     wse.add_chart(pie, "G2")
 
+    # Gráfica cumplimiento
     wse["D8"] = "Cumplimiento semanal"
     wse["D8"].font = Font(bold=True)
+
     comp_data = [("Cumple", cumplen), ("No cumple", no_cumplen)]
+
     for i, (cat, val) in enumerate(comp_data, start=9):
         wse.cell(i, 4).value = cat
         wse.cell(i, 5).value = val
+
     bar = BarChart()
     labels2 = Reference(wse, min_col=4, min_row=9, max_row=10)
     data2 = Reference(wse, min_col=5, min_row=8, max_row=10)
@@ -607,8 +660,12 @@ def exportar_excel_bytes(df: pd.DataFrame, semana: int, fecha_actual: datetime, 
 
     # Criterios
     wsc = wb.create_sheet("Criterios")
+
     criterios = [
         ["Indicador", "Criterio aplicado"],
+        ["Carga de archivos", "Permite cargar uno o varios PDF correspondientes a distintas secciones del mismo curso"],
+        ["Consolidación", "Todos los PDF se unen en un análisis general y se conserva la columna Archivo origen"],
+        ["Duplicados", "Si hay duplicados, se conserva el primer registro según SIS; si SIS está vacío, se usa ID Usuario"],
         ["Riesgo bajo", "0 a 24 horas desde la última actividad"],
         ["Riesgo medio", "Más de 24 y hasta 72 horas desde la última actividad"],
         ["Riesgo alto", "Más de 72 horas o sin actividad registrada"],
@@ -619,11 +676,13 @@ def exportar_excel_bytes(df: pd.DataFrame, semana: int, fecha_actual: datetime, 
         ["Avance 50%", "Más de 25 minutos y hasta 2 horas"],
         ["Avance 100%", "Más de 2 horas"],
     ]
+
     for row in criterios:
         wsc.append(row)
+
     aplicar_estilo_encabezado(wsc, header_fill, header_font)
     wsc.column_dimensions["A"].width = 24
-    wsc.column_dimensions["B"].width = 72
+    wsc.column_dimensions["B"].width = 88
 
     bio = BytesIO()
     wb.save(bio)
@@ -695,47 +754,134 @@ with st.sidebar:
         st.write("**Avance 100%:** más de 2 horas.")
 
 st.markdown("<div class='ave-card'>", unsafe_allow_html=True)
-st.subheader("Carga del reporte PDF")
-st.write("Sube el reporte del curso exportado desde Canvas/UVG en formato PDF. La aplicación procesará únicamente los registros con rol **Estudiante**.")
-uploaded_file = st.file_uploader("Selecciona el archivo PDF", type=["pdf"])
-procesar = st.button("Procesar reporte", type="primary", use_container_width=True)
+st.subheader("Carga de reportes PDF")
+st.write(
+    "Sube uno o varios reportes PDF del mismo curso exportados desde Canvas/UVG. "
+    "La aplicación consolidará todas las secciones y procesará únicamente los registros con rol **Estudiante**."
+)
+
+uploaded_files = st.file_uploader(
+    "Selecciona uno o varios archivos PDF",
+    type=["pdf"],
+    accept_multiple_files=True,
+)
+
+if uploaded_files:
+    st.success(f"Archivos cargados: {len(uploaded_files)}")
+    with st.expander("Ver archivos cargados"):
+        for file in uploaded_files:
+            st.write(f"• {file.name}")
+
+procesar = st.button("Procesar reportes", type="primary", use_container_width=True)
 st.markdown("</div>", unsafe_allow_html=True)
 
+
 if procesar:
-    if uploaded_file is None:
-        st.error("Debe cargar un archivo PDF antes de procesar.")
+    if not uploaded_files:
+        st.error("Debe cargar uno o varios archivos PDF antes de procesar.")
     else:
-        with st.spinner("Procesando PDF y calculando indicadores..."):
+        with st.spinner("Procesando PDFs, consolidando secciones y calculando indicadores..."):
             try:
-                with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
-                    tmp.write(uploaded_file.getbuffer())
-                    tmp_path = tmp.name
+                dataframes = []
+                errores = []
 
-                registros = procesar_pdf(tmp_path, int(semana), fecha_actual)
-                os.remove(tmp_path)
+                for uploaded_file in uploaded_files:
+                    tmp_path = None
 
-                if not registros:
-                    st.warning("No se encontraron estudiantes en el PDF. Verifique que el archivo corresponda al formato del reporte del curso.")
+                    try:
+                        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+                            tmp.write(uploaded_file.getbuffer())
+                            tmp_path = tmp.name
+
+                        registros = procesar_pdf(tmp_path, int(semana), fecha_actual)
+
+                        if registros:
+                            df_temp = registros_a_dataframe(registros, int(semana))
+                            df_temp.insert(0, "Archivo origen", uploaded_file.name)
+                            dataframes.append(df_temp)
+                        else:
+                            errores.append(f"No se encontraron estudiantes válidos en: {uploaded_file.name}")
+
+                    except Exception as e:
+                        errores.append(f"Error procesando {uploaded_file.name}: {e}")
+
+                    finally:
+                        if tmp_path and os.path.exists(tmp_path):
+                            os.remove(tmp_path)
+
+                if not dataframes:
+                    st.warning(
+                        "No se encontraron estudiantes en los PDF cargados. "
+                        "Verifique que los archivos correspondan al formato del reporte del curso."
+                    )
+
+                    for error in errores:
+                        st.warning(error)
+
                 else:
-                    df = registros_a_dataframe(registros, int(semana))
-                    excel_bytes = exportar_excel_bytes(df, int(semana), fecha_actual, uploaded_file.name)
+                    df = pd.concat(dataframes, ignore_index=True)
+
+                    # Eliminar duplicados si un estudiante aparece en más de una sección o archivo.
+                    # Prioridad: SIS; si SIS está vacío, se usa ID Usuario.
+                    df["_clave_duplicado"] = df["SIS"].astype(str).str.strip()
+                    df.loc[
+                        df["_clave_duplicado"].eq("") |
+                        df["_clave_duplicado"].str.lower().eq("nan"),
+                        "_clave_duplicado"
+                    ] = df["ID Usuario"].astype(str)
+
+                    duplicados = int(df.duplicated(subset=["_clave_duplicado"]).sum())
+
+                    df = (
+                        df.drop_duplicates(subset=["_clave_duplicado"], keep="first")
+                        .drop(columns=["_clave_duplicado"])
+                    )
+
+                    nombres_archivos = "; ".join([file.name for file in uploaded_files])
+
+                    excel_bytes = exportar_excel_bytes(
+                        df,
+                        int(semana),
+                        fecha_actual,
+                        nombres_archivos
+                    )
+
                     powerbi_bytes = exportar_base_powerbi_csv_bytes(
                         df=df,
                         semana=int(semana),
                         fecha_actual=fecha_actual,
-                        archivo_origen=uploaded_file.name,
-                        archivos_procesados=1,
+                        archivo_origen=nombres_archivos,
+                        archivos_procesados=len(uploaded_files),
                     )
 
                     st.session_state["df_reporte"] = df
                     st.session_state["excel_bytes"] = excel_bytes.getvalue()
                     st.session_state["powerbi_bytes"] = powerbi_bytes.getvalue()
-                    st.session_state["excel_name"] = f"{os.path.splitext(uploaded_file.name)[0]}_indicadores_{fecha_actual.strftime('%Y%m%d_%H%M')}.xlsx"
+                    st.session_state["excel_name"] = f"analisis_general_curso_{fecha_actual.strftime('%Y%m%d_%H%M')}.xlsx"
                     st.session_state["powerbi_name"] = "base_powerbi_ave.csv"
                     st.session_state["semana"] = int(semana)
-                    st.success(f"Reporte procesado correctamente. Estudiantes procesados: {len(df)}")
+                    st.session_state["archivos_procesados"] = len(uploaded_files)
+                    st.session_state["duplicados_eliminados"] = duplicados
+                    st.session_state["errores_proceso"] = errores
+
+                    st.success(
+                        f"Análisis general generado correctamente. "
+                        f"Archivos procesados: {len(uploaded_files)} · "
+                        f"Estudiantes consolidados: {len(df)}"
+                    )
+
+                    if duplicados > 0:
+                        st.info(
+                            f"Se eliminaron {duplicados} registro(s) duplicado(s) "
+                            "detectados por SIS o ID Usuario."
+                        )
+
+                    for error in errores:
+                        st.warning(error)
+
             except Exception as e:
-                st.error(f"Ocurrió un error al procesar el PDF: {e}")
+                st.error(f"Ocurrió un error al procesar los PDF: {e}")
+
 
 if "df_reporte" in st.session_state:
     df = st.session_state["df_reporte"]
@@ -747,18 +893,30 @@ if "df_reporte" in st.session_state:
     riesgo_alto = int((df["Riesgo abandono"] == "Alto").sum())
     cumplen = int((df["Estado cumplimiento"] == "Cumple").sum())
     promedio_horas = round(float(df["Actividad total (horas)"].mean()), 2) if total else 0
+    secciones_detectadas = int(df["Sección"].nunique()) if total else 0
+    archivos_procesados = st.session_state.get("archivos_procesados", 1)
 
-    st.subheader("Resumen general")
-    k1, k2, k3, k4, k5, k6 = st.columns(6)
-    k1.metric("Total estudiantes", total)
-    k2.metric("Con actividad", activos)
-    k3.metric("Sin actividad", sin_act)
-    k4.metric("Riesgo alto", riesgo_alto)
-    k5.metric("Alertas 72h", alerta)
-    k6.metric("Promedio horas", promedio_horas)
+    st.subheader("Resumen general consolidado")
+
+    k1, k2, k3, k4, k5, k6, k7 = st.columns(7)
+    k1.metric("PDF procesados", archivos_procesados)
+    k2.metric("Secciones", secciones_detectadas)
+    k3.metric("Total estudiantes", total)
+    k4.metric("Con actividad", activos)
+    k5.metric("Sin actividad", sin_act)
+    k6.metric("Riesgo alto", riesgo_alto)
+    k7.metric("Alertas 72h", alerta)
+
+    k8, k9, k10 = st.columns(3)
+    k8.metric("Cumplen horas", cumplen)
+    k9.metric("No cumplen", total - cumplen)
+    k10.metric("Promedio horas", promedio_horas)
+
+    if st.session_state.get("duplicados_eliminados", 0) > 0:
+        st.info(f"Duplicados eliminados en la consolidación: {st.session_state['duplicados_eliminados']}")
 
     st.download_button(
-        label="Descargar Excel con indicadores",
+        label="Descargar Excel consolidado con indicadores",
         data=st.session_state["excel_bytes"],
         file_name=st.session_state["excel_name"],
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -774,47 +932,147 @@ if "df_reporte" in st.session_state:
         help="Guarda este archivo como base_powerbi_ave.csv y úsalo como fuente del dashboard en Power BI.",
     )
 
-    tab1, tab2, tab3, tab4 = st.tabs(["Reporte procesado", "Alertas", "Gráficas", "Estadísticas"])
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(
+        [
+            "Reporte consolidado",
+            "Resumen por sección",
+            "Alertas",
+            "Gráficas",
+            "Estadísticas",
+        ]
+    )
 
     with tab1:
         st.dataframe(df, use_container_width=True, height=520)
 
     with tab2:
-        df_alertas = df[df["Alerta 72h"].isin(["Sí", "Sin actividad registrada"]) | (df["Riesgo abandono"] == "Alto")].copy()
+        if "Sección" in df.columns:
+            resumen_seccion = df.groupby("Sección", dropna=False).agg(
+                Total_estudiantes=("Nombre", "count"),
+                Con_actividad=("Fecha última actividad", lambda x: (x != "").sum()),
+                Sin_actividad=("Fecha última actividad", lambda x: (x == "").sum()),
+                Riesgo_bajo=("Riesgo abandono", lambda x: (x == "Bajo").sum()),
+                Riesgo_medio=("Riesgo abandono", lambda x: (x == "Medio").sum()),
+                Riesgo_alto=("Riesgo abandono", lambda x: (x == "Alto").sum()),
+                Alertas_72h=("Alerta 72h", lambda x: x.isin(["Sí", "Sin actividad registrada"]).sum()),
+                Cumplen=("Estado cumplimiento", lambda x: (x == "Cumple").sum()),
+                No_cumplen=("Estado cumplimiento", lambda x: (x == "No cumple").sum()),
+                Promedio_horas=("Actividad total (horas)", "mean"),
+            ).reset_index()
+
+            resumen_seccion["Promedio_horas"] = resumen_seccion["Promedio_horas"].round(2)
+            resumen_seccion["% Riesgo alto"] = (
+                resumen_seccion["Riesgo_alto"] / resumen_seccion["Total_estudiantes"] * 100
+            ).round(2)
+            resumen_seccion["% Cumplimiento"] = (
+                resumen_seccion["Cumplen"] / resumen_seccion["Total_estudiantes"] * 100
+            ).round(2)
+
+            st.write("Resumen consolidado por sección detectada en los PDF cargados.")
+            st.dataframe(resumen_seccion, use_container_width=True, height=420, hide_index=True)
+        else:
+            st.warning("No se encontró la columna Sección en la base procesada.")
+
+    with tab3:
+        df_alertas = df[
+            df["Alerta 72h"].isin(["Sí", "Sin actividad registrada"]) |
+            (df["Riesgo abandono"] == "Alto")
+        ].copy()
+
         st.write(f"Estudiantes con alerta o riesgo alto: **{len(df_alertas)}**")
         st.dataframe(df_alertas, use_container_width=True, height=500)
 
-    with tab3:
+    with tab4:
         c1, c2 = st.columns(2)
+
         with c1:
             riesgo_counts = df["Riesgo abandono"].value_counts().reset_index()
             riesgo_counts.columns = ["Riesgo", "Cantidad"]
-            fig = px.pie(riesgo_counts, names="Riesgo", values="Cantidad", title="Distribución por riesgo de abandono")
+
+            fig = px.pie(
+                riesgo_counts,
+                names="Riesgo",
+                values="Cantidad",
+                title="Distribución general por riesgo de abandono",
+            )
             st.plotly_chart(fig, use_container_width=True)
+
         with c2:
             comp_counts = df["Estado cumplimiento"].value_counts().reset_index()
             comp_counts.columns = ["Estado", "Cantidad"]
-            fig = px.bar(comp_counts, x="Estado", y="Cantidad", title="Cumplimiento de horas esperadas", text="Cantidad")
+
+            fig = px.bar(
+                comp_counts,
+                x="Estado",
+                y="Cantidad",
+                title="Cumplimiento general de horas esperadas",
+                text="Cantidad",
+            )
             st.plotly_chart(fig, use_container_width=True)
 
         c3, c4 = st.columns(2)
+
         with c3:
             avance_counts = df["Avance actividad (%)"].value_counts().sort_index().reset_index()
             avance_counts.columns = ["Avance (%)", "Cantidad"]
-            fig = px.bar(avance_counts, x="Avance (%)", y="Cantidad", title="Distribución por avance de actividad", text="Cantidad")
-            st.plotly_chart(fig, use_container_width=True)
-        with c4:
-            top_inactividad = df.copy()
-            top_inactividad["Horas desde última num"] = pd.to_numeric(top_inactividad["Horas desde última"], errors="coerce")
-            top_inactividad = top_inactividad.sort_values("Horas desde última num", ascending=False).head(15)
-            fig = px.bar(top_inactividad, x="Horas desde última num", y="Nombre", orientation="h", title="Top 15 estudiantes con más horas sin actividad")
+
+            fig = px.bar(
+                avance_counts,
+                x="Avance (%)",
+                y="Cantidad",
+                title="Distribución general por avance de actividad",
+                text="Cantidad",
+            )
             st.plotly_chart(fig, use_container_width=True)
 
-    with tab4:
+        with c4:
+            if "Sección" in df.columns:
+                riesgo_seccion = df.groupby("Sección", dropna=False).agg(
+                    Riesgo_alto=("Riesgo abandono", lambda x: (x == "Alto").sum())
+                ).reset_index()
+
+                fig = px.bar(
+                    riesgo_seccion,
+                    x="Sección",
+                    y="Riesgo_alto",
+                    title="Riesgo alto por sección",
+                    text="Riesgo_alto",
+                )
+                st.plotly_chart(fig, use_container_width=True)
+
+        top_inactividad = df.copy()
+        top_inactividad["Horas desde última num"] = pd.to_numeric(
+            top_inactividad["Horas desde última"],
+            errors="coerce"
+        )
+
+        top_inactividad = top_inactividad.sort_values(
+            "Horas desde última num",
+            ascending=False
+        ).head(15)
+
+        hover_cols = ["SIS", "Sección"]
+        if "Archivo origen" in top_inactividad.columns:
+            hover_cols = ["Archivo origen", "SIS", "Sección"]
+
+        fig = px.bar(
+            top_inactividad,
+            x="Horas desde última num",
+            y="Nombre",
+            color="Sección" if "Sección" in top_inactividad.columns else None,
+            orientation="h",
+            title="Top 15 estudiantes con más horas sin actividad",
+            hover_data=hover_cols,
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+    with tab5:
         stats = pd.DataFrame({
             "Indicador": [
                 "Semana seleccionada",
                 "Horas esperadas acumuladas",
+                "PDF procesados",
+                "Secciones detectadas",
                 "Total de estudiantes",
                 "Con última actividad registrada",
                 "Sin actividad registrada",
@@ -825,10 +1083,13 @@ if "df_reporte" in st.session_state:
                 "Cumplen horas esperadas",
                 "No cumplen horas esperadas",
                 "Promedio actividad total (horas)",
+                "Duplicados eliminados",
             ],
             "Valor": [
                 st.session_state["semana"],
                 st.session_state["semana"] * 10,
+                archivos_procesados,
+                secciones_detectadas,
                 total,
                 activos,
                 sin_act,
@@ -839,11 +1100,17 @@ if "df_reporte" in st.session_state:
                 cumplen,
                 total - cumplen,
                 promedio_horas,
+                st.session_state.get("duplicados_eliminados", 0),
             ],
         })
+
         st.dataframe(stats, use_container_width=True, hide_index=True)
+
 else:
-    st.info("Carga un PDF, selecciona la semana de análisis y presiona **Procesar reporte** para generar los indicadores.")
+    st.info(
+        "Carga uno o varios PDF, selecciona la semana de análisis y presiona "
+        "**Procesar reportes** para generar los indicadores consolidados."
+    )
 
 st.markdown("---")
 st.caption(f"{CREDITS} · {SUBCREDITS}")
